@@ -1,4 +1,6 @@
 import asyncio
+from pprint import pprint
+
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
 from telebot.formatting import hcite, hitalic, hbold, hlink
@@ -38,17 +40,17 @@ def get_review(review):
         return "Нет отзывов"
 
 
-def about_teacher_short(full_name, teacher, id):
+def about_teacher_short(full_name, teacher, id, id_teacher):
     kb = types.InlineKeyboardMarkup(row_width=3)
-    btn1 = types.InlineKeyboardButton(text='Оценить', callback_data=f"rate_{full_name}") if full_name not in \
+    btn1 = types.InlineKeyboardButton(text='Оценить', callback_data=f"rate_{id_teacher}") if full_name not in \
                                                                                             db["user"][str(id)][
                                                                                                 "appreciated"] else None
-    btn2 = types.InlineKeyboardButton(text='Отзывы', callback_data=f"review_0_{full_name}")
-    btn3 = types.InlineKeyboardButton(text='Цитаты', callback_data=f"quote_0_{full_name}")
+    btn2 = types.InlineKeyboardButton(text='Отзывы', callback_data=f"review_0_{id_teacher}")
+    btn3 = types.InlineKeyboardButton(text='Цитаты', callback_data=f"quote_0_{id_teacher}")
     kb.add(*[i for i in (btn1, btn2, btn3) if i])
     if str(id) in db["admin"]:
-        kb.add(types.InlineKeyboardButton(text='Изменить', callback_data=f"edit_{full_name}"),
-               types.InlineKeyboardButton(text='Удалить', callback_data=f"del_{full_name}"))
+        kb.add(types.InlineKeyboardButton(text='Изменить', callback_data=f"edit_{id_teacher}"),
+               types.InlineKeyboardButton(text='Удалить', callback_data=f"del_{id_teacher}"))
     kb.add(types.InlineKeyboardButton(text='Назад', callback_data=f"back_to_"))
 
     rating = get_rating(teacher['rating'])
@@ -96,8 +98,11 @@ def update_db():
 #               "950100889": {"first_name":'Hakuuz', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False}}
 
 # учителя: фио(str): {предмет(str), фото(str), рейтинг(список с оценками),
-#                    цитаты(список с цитатами), отзывы(список с отзывами)}
+#                    цитаты(список с цитатами), отзывы(список с отзывами), id_teacher(int)}
 # db["teacher"] = {}
+#
+# db["id_teacher"] = {}
+
 
 # непроверенные цитаты: {фио учителя(str): [цитата(str)...]}
 # db["quote"] = {}
@@ -185,10 +190,11 @@ async def get_quote_or_review_for_adm(message):
             dict_q_or_r = choice(db[comm][teacher])
             text = (f'Цитата от {teacher}:\n'
                     f'{hcite(dict_q_or_r)}')
+            id_teacher = db['teacher'][teacher]['id_teacher']
             q_or_r = db[comm][teacher].index(dict_q_or_r)
 
-            kb.add(types.InlineKeyboardButton(text="Добавить", callback_data=f"add_{comm}_{teacher}_{q_or_r}"),
-                   types.InlineKeyboardButton(text="Удалить", callback_data=f"del_{comm}_{teacher}_{q_or_r}"))
+            kb.add(types.InlineKeyboardButton(text="Добавить", callback_data=f"add_{comm}_{id_teacher}_{q_or_r}"),
+                   types.InlineKeyboardButton(text="Удалить", callback_data=f"del_{comm}_{id_teacher}_{q_or_r}"))
         else:
             text = f'Нет непроверенных {"цитат" if comm == "quote" else "отзывов"}.'
         await bot.send_message(message.from_user.id, text, parse_mode='HTML', reply_markup=kb)
@@ -268,7 +274,8 @@ async def view_teacher(message):
     teacher = sorted(db["teacher"].keys())
     kb = types.InlineKeyboardMarkup(row_width=3)
     for full_name in teacher[:min(len(teacher), 5)]:
-        kb.add(types.InlineKeyboardButton(text=full_name, callback_data=f"open_{full_name}"))
+        id_teacher = db["teacher"][full_name]['id_teacher']
+        kb.add(types.InlineKeyboardButton(text=full_name, callback_data=f"open_{id_teacher}"))
 
     if len(teacher) > 5:
         kb.add(types.InlineKeyboardButton(text="1", callback_data="pass"),
@@ -281,10 +288,11 @@ async def view_teacher(message):
 async def callback_view(callback):
     callback.data = int(callback.data.split('_')[0])
     teacher = sorted(db["teacher"].keys())
+    id_teacher = db["teacher"][teacher]['id_teacher']
     kb = types.InlineKeyboardMarkup(row_width=3)
 
     for full_name in teacher[callback.data:callback.data + min(len(teacher) - callback.data, 5)]:
-        kb.add(types.InlineKeyboardButton(text=full_name, callback_data=f"open_{full_name}"))
+        kb.add(types.InlineKeyboardButton(text=full_name, callback_data=f"open_{id_teacher}"))
 
     if len(teacher) > 5:
         btn0 = types.InlineKeyboardButton(text="◀️",
@@ -308,9 +316,10 @@ async def callback_back_to_(callback):
 # Просмотр информации об учителе (просмотр конкретного учителя)
 @bot.callback_query_handler(func=lambda callback: "open_" in callback.data or "back_" in callback.data)
 async def callback_open(callback):
-    callback.data = callback.data[5:]
-    teacher = db["teacher"][callback.data]
-    text, photo, kb = about_teacher_short(callback.data, teacher, callback.message.chat.id)
+    id_teacher = callback.data[5:]
+    full_name = db["id_teacher"][id_teacher]
+    teacher = db["teacher"][full_name]
+    text, photo, kb = about_teacher_short(full_name, teacher, callback.message.chat.id, id_teacher)
 
     await bot.delete_message(callback.message.chat.id, callback.message.message_id)
     await bot.send_photo(callback.message.chat.id, photo, text, parse_mode='HTML', reply_markup=kb)
@@ -319,10 +328,10 @@ async def callback_open(callback):
 # Оценить учителя от 1 до 10 (вывод кнопочек)
 @bot.callback_query_handler(func=lambda callback: "rate_" in callback.data)
 async def callback_rate(callback):
-    callback.data = callback.data[5:]
+    id_teacher = callback.data[5:]
     kb = types.InlineKeyboardMarkup(row_width=5)
     kb.add(
-        *[types.InlineKeyboardButton(text=str(i), callback_data=f"rating_{i}_{callback.data}") for i in range(1, 11)])
+        *[types.InlineKeyboardButton(text=str(i), callback_data=f"rating_{i}_{id_teacher}") for i in range(1, 11)])
 
     await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id,
                                         reply_markup=kb)
@@ -331,19 +340,21 @@ async def callback_rate(callback):
 # Оценить учителя от 1 до 10 (можно только 1 раз), возвращение кнопок от предыдущей функции
 @bot.callback_query_handler(func=lambda callback: "rating_" in callback.data)
 async def callback_rating(callback):
-    rate, full_name = callback.data[7:].split("_")
+    rate, id_teacher = callback.data[7:].split("_")
+    pprint(id_teacher)
+    full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
     update_rating(teacher, rate)
     db["user"][str(callback.message.chat.id)]["appreciated"].append(full_name)
 
     kb = types.InlineKeyboardMarkup(row_width=2)
-    btn2 = types.InlineKeyboardButton(text='Отзывы', callback_data=f"review_0_{full_name}")
-    btn3 = types.InlineKeyboardButton(text='Цитаты', callback_data=f"quote_0_{full_name}")
+    btn2 = types.InlineKeyboardButton(text='Отзывы', callback_data=f"review_0_{id_teacher}")
+    btn3 = types.InlineKeyboardButton(text='Цитаты', callback_data=f"quote_0_{id_teacher}")
     kb.add(btn2, btn3)
 
     update_db()
 
-    callback.data = f'open_{full_name}'
+    callback.data = f'open_{id_teacher}'
     await callback_open(callback)
     await bot.send_message(callback.message.chat.id, "Благодарим за оценку ❤️")
 
@@ -351,7 +362,8 @@ async def callback_rating(callback):
 # Добавление цитаты/отзыва, отмена действия
 @bot.callback_query_handler(func=lambda callback: "OK_" in callback.data or "off_" in callback.data)
 async def callback_confirmation(callback):
-    action, comm, full_name = callback.data.split('_')
+    action, comm, id_teacher = callback.data.split('_')
+    full_name = db["id_teacher"][id_teacher]
     db["user"][str(callback.message.chat.id)]["make_" + comm] = ''
     await bot.edit_message_reply_markup(callback.message.chat.id, callback.message.message_id)
     if action == "OK":
@@ -366,14 +378,15 @@ async def callback_confirmation(callback):
                                f'Мы отправим {"его" if comm == "review" else "её"} на модерацию, для проверки на цензуру.')
     else:
         await bot.send_message(callback.message.chat.id, 'Действие отменено.')
-    callback.data = f'open_{full_name}'
+    callback.data = f'open_{id_teacher}'
     await callback_open(callback)
 
 
 # Оставить отзыв / Добавить цитату
 @bot.callback_query_handler(func=lambda callback: "make_" in callback.data)
 async def callback_make_review_or_quote(callback):
-    comm, full_name = callback.data.split("_")[1], callback.data.split("_")[2]
+    comm, id_teacher = callback.data.split("_")[1], callback.data.split("_")[2]
+    full_name = db["id_teacher"][id_teacher]
     db["user"][str(callback.message.chat.id)]["make_review" if comm == "review" else "make_quote"] = full_name
 
     update_db()
@@ -386,19 +399,20 @@ async def callback_make_review_or_quote(callback):
 @bot.callback_query_handler(func=lambda callback: ("review_" in callback.data or "quote_" in callback.data) and
                                                   "del" not in callback.data and "add" not in callback.data)
 async def callback_review_or_quote(callback):
-    comm, num, full_name = callback.data.split("_")[0], int(callback.data.split("_")[1]), callback.data.split("_")[2]
+    comm, num, id_teacher = callback.data.split("_")[0], int(callback.data.split("_")[1]), callback.data.split("_")[2]
+    full_name = db["id_teacher"][id_teacher]
     lst = db["teacher"][full_name][comm]
 
     kb = types.InlineKeyboardMarkup(row_width=3)
-    btn0 = types.InlineKeyboardButton(text="◀️", callback_data=f"{comm}_{num - 1}_{full_name}") \
+    btn0 = types.InlineKeyboardButton(text="◀️", callback_data=f"{comm}_{num - 1}_{id_teacher}") \
         if num != 0 and len(lst) > 0 else None
     btn1 = types.InlineKeyboardButton(text=str(num + 1), callback_data="pass") if len(lst) > 0 else None
-    btn2 = types.InlineKeyboardButton(text="▶️", callback_data=f"{comm}_{num + 1}_{full_name}") \
+    btn2 = types.InlineKeyboardButton(text="▶️", callback_data=f"{comm}_{num + 1}_{id_teacher}") \
         if num != len(lst) - 1 and len(lst) > 0 else None
     kb.add(*[i for i in (btn0, btn1, btn2) if i])
-    kb.add(types.InlineKeyboardButton(text="Назад ⬅", callback_data=f"back_{full_name}"),
+    kb.add(types.InlineKeyboardButton(text="Назад ⬅", callback_data=f"back_{id_teacher}"),
            types.InlineKeyboardButton(text="Написать отзыв" if comm == 'review' else "Добавить цитату",
-                                      callback_data=f"make_{comm}_{full_name}"))
+                                      callback_data=f"make_{comm}_{id_teacher}"))
 
     text = (f"{'Отзывы на' if comm == 'review' else 'Цитаты от'} {full_name}:\n"
             f"{hcite(lst[num]) if len(lst) > 0 else hitalic('Ничего не нашлось.')}")
@@ -412,9 +426,15 @@ async def callback_review_or_quote(callback):
 @bot.callback_query_handler(func=lambda callback: "save_edit_" in callback.data)
 async def callback_save_edit(callback):
     id = str(callback.message.chat.id)
+    print(id)
     full_name = db["admin"][id]["edit_teacher"]['full_name']
+    print(full_name)
+    id_teacher = db["teacher"][full_name]['id_teacher']
+    print(id_teacher)
     edit = {'ФИО': 'full_name', 'Предмет': "subject", "Фото": "photo"}[db["admin"][id]["edit_teacher"]['edit']]
+    print(edit)
     new_obj = db['admin'][id]['edit_teacher']['new']
+    print(new_obj)
     db['admin'][id]['edit_teacher']['full_name'] = ''
     db['admin'][id]['edit_teacher']['edit'] = ''
     await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id)
@@ -422,12 +442,14 @@ async def callback_save_edit(callback):
     if 'dont' not in callback.data:
         if edit == "full_name":
             db["teacher"][new_obj.title()] = db["teacher"][full_name]
+            db["id_teacher"][str(id_teacher)] = new_obj.title()
+            db['quote'][new_obj.title()] = db['quote'][full_name]
+            db['review'][new_obj.title()] = db['review'][full_name]
             del db["teacher"][full_name]
-            full_name = new_obj.title()
         else:
             db['teacher'][full_name][edit] = new_obj
 
-        callback.data = f'open_{full_name}'
+        callback.data = f'open_{id_teacher}'
         await callback_open(callback)
         await bot.send_message(int(id), '↑ Данные успешно обновлены ↑')
     else:
@@ -438,7 +460,8 @@ async def callback_save_edit(callback):
 # Запрос: на что именно изменять данные у учителя
 @bot.callback_query_handler(func=lambda callback: "_editing_" in callback.data)
 async def callback_editing(callback):
-    obj, _, full_name = callback.data.split("_")
+    obj, _, id_teacher = callback.data.split("_")
+    full_name = db["id_teacher"][id_teacher]
     text = f"Введите новые данные ({obj}):"
     db['admin'][str(callback.message.chat.id)]['edit_teacher']['full_name'] = full_name
     db['admin'][str(callback.message.chat.id)]['edit_teacher']['edit'] = obj
@@ -452,7 +475,7 @@ async def callback_editing(callback):
 # Запрос: какие изменять данные у учителя
 @bot.callback_query_handler(func=lambda callback: "edit_" in callback.data)
 async def callback_edit(callback):
-    callback.data = callback.data[5:]
+    id_teacher = callback.data[5:]
     if db['admin'][str(callback.message.chat.id)]['edit_teacher']['full_name']:
         db['admin'][str(callback.message.chat.id)]['edit_teacher']['full_name'] = ''
         db['admin'][str(callback.message.chat.id)]['edit_teacher']['edit'] = ''
@@ -461,17 +484,18 @@ async def callback_edit(callback):
 
     text = "Выберете, что вы хотите изменить:"
     kb = types.InlineKeyboardMarkup(row_width=3)
-    kb.add(*[types.InlineKeyboardButton(text=f"{i}", callback_data=f"{i}_editing_{callback.data}") for i in
+    kb.add(*[types.InlineKeyboardButton(text=f"{i}", callback_data=f"{i}_editing_{id_teacher}") for i in
              ('ФИО', "Предмет", "Фото")])
 
     await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id)
     await bot.send_message(callback.message.chat.id, text, reply_markup=kb)
 
 
-# Добавление цитаты/отзыва, придложенных юзером (только админы)
+# Добавление цитаты/отзыва, предложенных юзером (только админы)
 @bot.callback_query_handler(func=lambda callback: "add_quote_" in callback.data or "add_review_" in callback.data)
 async def callback_add_q_or_r(callback):
-    _, comm, teacher, q_or_r = callback.data.split("_")
+    _, comm, id_teacher, q_or_r = callback.data.split("_")
+    teacher = db["id_teacher"][id_teacher]
     q_or_r = db[comm][teacher].pop(int(q_or_r))
     db['teacher'][teacher][comm].append(q_or_r)
 
@@ -483,10 +507,11 @@ async def callback_add_q_or_r(callback):
                            f" учителю {hitalic(teacher)}", parse_mode='HTML')
 
 
-# Удаление цитаты/отзыва, придложенных юзером (только админы)
+# Удаление цитаты/отзыва, предложенных юзером (только админы)
 @bot.callback_query_handler(func=lambda callback: "del_quote_" in callback.data or "del_review_" in callback.data)
 async def callback_del_q_or_r(callback):
-    _, comm, teacher, q_or_r = callback.data.split("_")
+    _, comm, id_teacher, q_or_r = callback.data.split("_")
+    teacher = db["id_teacher"][id_teacher]
     del db[comm][teacher][int(q_or_r)]
 
     update_db()
@@ -499,11 +524,13 @@ async def callback_del_q_or_r(callback):
 @bot.callback_query_handler(func=lambda callback: "delete_" in callback.data)
 async def callback_delete(callback):
     if 'dont' not in callback.data:
-        del db["teacher"][callback.data[7:]]
-        if callback.data[7:] in db['quote']:
-            del db['quote'][callback.data[7:]]
-        if callback.data[7:] in db['review']:
-            del db['review'][callback.data[7:]]
+        full_name = db["id_teacher"][callback.data[7:]]
+        del db["teacher"][full_name]
+        del db["id_teacher"][callback.data[7:]]
+        if full_name in db['quote']:
+            del db['quote'][full_name]
+        if full_name in db['review']:
+            del db['review'][full_name]
         text = "Учитель успешно удалён."
 
         update_db()
@@ -517,10 +544,10 @@ async def callback_delete(callback):
 # Удаление учителя или отмена (создание кнопок: удалить/не удалять)
 @bot.callback_query_handler(func=lambda callback: "del_" in callback.data)
 async def callback_del(callback):
-    callback.data = callback.data[4:]
-    text = f'Вы уверены, что хотите безвозвратно удалить учителя {hbold(callback.data)} ?'
+    full_name = db["id_teacher"][int(callback.data[4:])]
+    text = f'Вы уверены, что хотите безвозвратно удалить учителя {hbold(full_name)} ?'
     kb = types.InlineKeyboardMarkup(row_width=3)
-    kb.add(types.InlineKeyboardButton(text="Да", callback_data=f'delete_{callback.data}'),
+    kb.add(types.InlineKeyboardButton(text="Да", callback_data=f'delete_{callback.data[4:]}'),
            types.InlineKeyboardButton(text="Нет, отмена!", callback_data='dont_delete_'))
 
     await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id)
@@ -570,11 +597,16 @@ async def text_processing(message):
             if message.photo and shortcut["full_name"] and shortcut["subject"]:
                 shortcut["photo"] = message.photo[0].file_id
                 shortcut["start"] = False
+
+                n = int(max(list(db["id_teacher"].keys()))) + 1 if len(db["id_teacher"]) > 0 else 0
+                db["id_teacher"][n] = shortcut["full_name"]
+
                 db["teacher"][shortcut["full_name"]] = {'subject': shortcut["subject"],
                                                         'photo': message.photo[0].file_id,
-                                                        'rating': [], 'quote': [], 'review': []}
+                                                        'rating': [], 'quote': [], 'review': [],
+                                                        "id_teacher": str(n)}
                 text, photo, kb = about_teacher_short(shortcut["full_name"],
-                                                      db["teacher"][shortcut["full_name"]], id)
+                                                      db["teacher"][shortcut["full_name"]], id, str(n))
                 await bot.send_photo(message.chat.id, photo, text, parse_mode='HTML', reply_markup=kb)
 
                 shortcut["full_name"], shortcut["subject"], shortcut["photo"] = "", "", ""
@@ -614,7 +646,7 @@ async def text_processing(message):
                 kb = types.InlineKeyboardMarkup(row_width=3)
                 kb.add(types.InlineKeyboardButton(text="Да", callback_data='save_edit_'),
                        types.InlineKeyboardButton(text="Нет, редактировать",
-                                                  callback_data=f'edit_{shortcut["full_name"]}'),
+                                                  callback_data=f'edit_{db["teacher"][shortcut["full_name"]]["id_teacher"]}'),
                        types.InlineKeyboardButton(text=f"Удалить и ничего не менять", callback_data=f"dont_save_edit_"))
 
                 await bot.send_message(message.from_user.id, text, parse_mode='HTML', reply_markup=kb)
@@ -678,5 +710,5 @@ async def main():
         print(f"Хрень какая-то")
 
 
-keep_alive()
+# keep_alive()
 asyncio.run(main())
