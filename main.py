@@ -79,23 +79,23 @@ def update_db():
 # админы: id(строка с числом): статус разработчика(bool),
 #         добавление учителя: начал добавлять(bool), фио(str), предмет(str), фото(str),
 #         редактировать учителя: начал редактировать(bool), фио(str), что изменить(str)
-# db["admin"] = {"5285632228": {"first_name":'Alexa',
-#                               "developer_status": True,
-#                               "add_teacher": {"start": False, "full_name": '',
-#                                               "subject": '', "photo": ''},
-#                               "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
-#                               "add_admin": False, 'del_admin': False},
-#                "950100889": {"first_name":'Hakuuz',
-#                              "developer_status": False,
-#                              "add_teacher": {"start": False, "full_name": '',
-#                                              "subject": '', "photo": ''},
-#                              "edit_teacher": {"full_name": '', 'edit': ''},
-#                              "add_admin": False, 'del_admin': False}}
+db["admin"] = {"5285632228": {"first_name":'Alexa',
+                              "developer_status": True,
+                              "add_teacher": {"start": False, "full_name": '',
+                                              "subject": '', "photo": ''},
+                              "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
+                              "add_admin": False, 'del_admin': False},
+               "950100889": {"first_name":'Hakuuz',
+                             "developer_status": False,
+                             "add_teacher": {"start": False, "full_name": '',
+                                             "subject": '', "photo": ''},
+                             "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
+                             "add_admin": False, 'del_admin': False}}
 
 # юзеры: id(строка с числом): пишет отзыв(bool), пишет цитату(bool), учитель(str),
 #                             фио учителя(str): [оценил ли(bool)...]
-# db["user"] = {"5285632228": {"first_name":'Alexa', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False},
-#               "950100889": {"first_name":'Hakuuz', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False}}
+db["user"] = {"5285632228": {"first_name":'Alexa', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False},
+              "950100889": {"first_name":'Hakuuz', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False}}
 
 # учителя: фио(str): {предмет(str), фото(str), рейтинг(список с оценками),
 #                    цитаты(список с цитатами), отзывы(список с отзывами), id_teacher(int)}
@@ -167,13 +167,16 @@ async def add_teacher(message):
 # Прекратить все действия
 @bot.message_handler(commands=['cancel'])
 async def cancel(message):
-    db["user"][str(message.from_user.id)] = {"make_review": "", "make_quote": "",
-                                             "appreciated": db["user"][str(message.from_user.id)]["appreciated"]}
+    db["user"][str(message.from_user.id)] = {"first_name": message.from_user.first_name,
+                                             "make_review": "", "make_quote": "",
+                                             "appreciated": db["user"][str(message.from_user.id)]["appreciated"],
+                                             'support': False}
     if str(message.from_user.id) in db['admin']:
         db['admin'][str(message.from_user.id)]["add_teacher"] = {"start": False, "full_name": '', "subject": '',
                                                                  "photo": ''}
         db['admin'][str(message.from_user.id)]["edit_teacher"] = {"full_name": '', 'edit': '', 'new': ''}
-
+        db['admin'][str(message.from_user.id)]["add_admin"] = False
+        db['admin'][str(message.from_user.id)]['del_admin'] = False
     update_db()
 
     await bot.reply_to(message, "Все действия прекращены!")
@@ -316,6 +319,9 @@ async def callback_back_to_(callback):
 # Просмотр информации об учителе (просмотр конкретного учителя)
 @bot.callback_query_handler(func=lambda callback: "open_" in callback.data or "back_" in callback.data)
 async def callback_open(callback):
+    pprint(db['teacher'])
+    print()
+    pprint(db['id_teacher'])
     id_teacher = callback.data[5:]
     full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
@@ -599,7 +605,7 @@ async def text_processing(message):
                 shortcut["start"] = False
 
                 n = int(max(list(db["id_teacher"].keys()))) + 1 if len(db["id_teacher"]) > 0 else 0
-                db["id_teacher"][n] = shortcut["full_name"]
+                db["id_teacher"][str(n)] = shortcut["full_name"]
 
                 db["teacher"][shortcut["full_name"]] = {'subject': shortcut["subject"],
                                                         'photo': message.photo[0].file_id,
@@ -662,7 +668,7 @@ async def text_processing(message):
                                              "developer_status": False,
                                              "add_teacher": {"start": False, "full_name": '',
                                                              "subject": '', "photo": ''},
-                                             "edit_teacher": {"full_name": '', 'edit': ''},
+                                             "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
                                              "add_admin": False, 'del_admin': False}
 
                 await bot.send_message(message.from_user.id,
@@ -702,12 +708,8 @@ async def text_processing(message):
 
 
 async def main():
-    try:
-        await bot.polling(non_stop=True, interval=0, request_timeout=3600)
-    except asyncio.CancelledError:
-        print("Polling was cancelled")
-    except:
-        print(f"Хрень какая-то")
+    await bot.polling(non_stop=True)
+
 
 
 # keep_alive()
