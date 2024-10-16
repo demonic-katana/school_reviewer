@@ -1,6 +1,4 @@
 import asyncio
-from pprint import pprint
-
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
 from telebot.formatting import hcite, hitalic, hbold, hlink
@@ -319,9 +317,6 @@ async def callback_back_to_(callback):
 # Просмотр информации об учителе (просмотр конкретного учителя)
 @bot.callback_query_handler(func=lambda callback: "open_" in callback.data or "back_" in callback.data)
 async def callback_open(callback):
-    pprint(db['teacher'])
-    print()
-    pprint(db['id_teacher'])
     id_teacher = callback.data[5:]
     full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
@@ -347,7 +342,6 @@ async def callback_rate(callback):
 @bot.callback_query_handler(func=lambda callback: "rating_" in callback.data)
 async def callback_rating(callback):
     rate, id_teacher = callback.data[7:].split("_")
-    pprint(id_teacher)
     full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
     update_rating(teacher, rate)
@@ -432,15 +426,10 @@ async def callback_review_or_quote(callback):
 @bot.callback_query_handler(func=lambda callback: "save_edit_" in callback.data)
 async def callback_save_edit(callback):
     id = str(callback.message.chat.id)
-    print(id)
     full_name = db["admin"][id]["edit_teacher"]['full_name']
-    print(full_name)
     id_teacher = db["teacher"][full_name]['id_teacher']
-    print(id_teacher)
     edit = {'ФИО': 'full_name', 'Предмет': "subject", "Фото": "photo"}[db["admin"][id]["edit_teacher"]['edit']]
-    print(edit)
     new_obj = db['admin'][id]['edit_teacher']['new']
-    print(new_obj)
     db['admin'][id]['edit_teacher']['full_name'] = ''
     db['admin'][id]['edit_teacher']['edit'] = ''
     await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id)
@@ -449,8 +438,10 @@ async def callback_save_edit(callback):
         if edit == "full_name":
             db["teacher"][new_obj.title()] = db["teacher"][full_name]
             db["id_teacher"][str(id_teacher)] = new_obj.title()
-            db['quote'][new_obj.title()] = db['quote'][full_name]
-            db['review'][new_obj.title()] = db['review'][full_name]
+            if new_obj.title() in db['quote']:
+                db['quote'][new_obj.title()] = db['quote'][full_name]
+            if new_obj.title() in db['review']:
+                db['review'][new_obj.title()] = db['review'][full_name]
             del db["teacher"][full_name]
         else:
             db['teacher'][full_name][edit] = new_obj
@@ -569,14 +560,16 @@ async def text_processing(message):
         # написать цитату/отзыв
         if db["user"][id]["make_review"] or db["user"][id]["make_quote"]:
             comm = "review" if db["user"][id]["make_review"] else "quote"
+            id_teacher = db['teacher'][db["user"][id]["make_review"] or db["user"][id]["make_quote"]]['id_teacher']
+
             kb = types.InlineKeyboardMarkup(row_width=2)
             kb.add(types.InlineKeyboardButton(text="OK", callback_data=f'OK_{comm}_'
-                                                                       f'{db["user"][id]["make_review"] or db["user"][id]["make_quote"]}'),
+                                                                       f'{id_teacher}'),
                    types.InlineKeyboardButton(text="Изменить", callback_data=f'make_{comm}_'
-                                                                             f'{db["user"][id]["make_review"] or db["user"][id]["make_quote"]}'),
+                                                                             f'{id_teacher}'),
                    types.InlineKeyboardButton(
                        text=f"Удалить и не {'оставлять отзыв' if comm == 'review' else 'добавить цитату'}",
-                       callback_data=f'off_{comm}_{db["user"][id]["make_review"] or db["user"][id]["make_quote"]}'))
+                       callback_data=f'off_{comm}_{id_teacher}'))
             text = (f"Ваш{' отзыв' if comm == 'review' else 'у цитату'} будут видеть так:\n"
                     f"{hcite(message.text)}\n\n"
                     f"Пожалуйста, проверьте {'его' if comm == 'review' else 'её'} на правильность.\n"
@@ -641,7 +634,7 @@ async def text_processing(message):
             shortcut['new'] = message.text if not message.photo else message.photo[0].file_id
             if shortcut['edit'] != 'ФИО' or message.text.title() not in db['teacher']:
                 if shortcut['edit'] == 'ФИО':
-                    message.text = message.text.title()
+                    shortcut["new"] = shortcut["new"].title()
                 if not message.photo:
                     text = (
                         f"Вы уверены, что хотите изменить {hitalic(shortcut['edit'])} у учителя {hitalic(shortcut['full_name'])} на:\n"
@@ -696,11 +689,12 @@ async def text_processing(message):
         # Ответ поддержки на вопрос пользователя
         elif message.reply_to_message and message.reply_to_message.text.startswith('support_'):
             num_mess = message.reply_to_message.text.split('\n')[0][8:]
-            id_chat = db['support'][num_mess][1]
-            await bot.send_message(id_chat, 'Ответ на ваш запрос в поддержку!\n' + hcite(
-                db['support'][num_mess][0]) + '\n\n' + f'{message.text}', parse_mode='HTML')
-            await bot.send_message(message.from_user.id, 'Ответ на запрос отправлен пользователю!')
-            del db['support'][num_mess]
+            if num_mess in db['support']:
+                id_chat = db['support'][num_mess][1]
+                await bot.send_message(id_chat, 'Ответ на ваш запрос в поддержку!\n' + hcite(
+                    db['support'][num_mess][0]) + '\n\n' + f'{message.text}', parse_mode='HTML')
+                await bot.send_message(message.from_user.id, 'Ответ на запрос отправлен пользователю!')
+                del db['support'][num_mess]
 
     if text:
         await bot.reply_to(message, text)
