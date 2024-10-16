@@ -74,26 +74,31 @@ def update_db():
     with open('db.json', 'w') as file:
         json.dump(db, file)
 
+def admin_menu_btn():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Команды админа"))
+    return markup
+
 # админы: id(строка с числом): статус разработчика(bool),
 #         добавление учителя: начал добавлять(bool), фио(str), предмет(str), фото(str),
 #         редактировать учителя: начал редактировать(bool), фио(str), что изменить(str)
-db["admin"] = {"5285632228": {"first_name":'Alexa',
-                              "developer_status": True,
-                              "add_teacher": {"start": False, "full_name": '',
-                                              "subject": '', "photo": ''},
-                              "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
-                              "add_admin": False, 'del_admin': False},
-               "950100889": {"first_name":'Hakuuz',
-                             "developer_status": False,
-                             "add_teacher": {"start": False, "full_name": '',
-                                             "subject": '', "photo": ''},
-                             "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
-                             "add_admin": False, 'del_admin': False}}
+# db["admin"] = {"5285632228": {"first_name":'Alexa',
+#                               "developer_status": True,
+#                               "add_teacher": {"start": False, "full_name": '',
+#                                               "subject": '', "photo": ''},
+#                               "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
+#                               "add_admin": False, 'del_admin': False},
+#                "950100889": {"first_name":'Hakuuz',
+#                              "developer_status": False,
+#                              "add_teacher": {"start": False, "full_name": '',
+#                                              "subject": '', "photo": ''},
+#                              "edit_teacher": {"full_name": '', 'edit': '', 'new': ''},
+#                              "add_admin": False, 'del_admin': False}}
 
 # юзеры: id(строка с числом): пишет отзыв(bool), пишет цитату(bool), учитель(str),
 #                             фио учителя(str): [оценил ли(bool)...]
-db["user"] = {"5285632228": {"first_name":'Alexa', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False},
-              "950100889": {"first_name":'Hakuuz', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False}}
+# db["user"] = {"5285632228": {"first_name":'Alexa', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False},
+#               "950100889": {"first_name":'Hakuuz', "make_review" : '', "make_quote" : '', "appreciated": [], 'support': False}}
 
 # учителя: фио(str): {предмет(str), фото(str), рейтинг(список с оценками),
 #                    цитаты(список с цитатами), отзывы(список с отзывами), id_teacher(int)}
@@ -115,7 +120,7 @@ db["user"] = {"5285632228": {"first_name":'Alexa', "make_review" : '', "make_quo
 # Handle '/start' and '/help'
 @bot.message_handler(commands=['start', 'help'])
 async def send_welcome(message):
-    if message.from_user.id not in db["user"]:
+    if str(message.from_user.id) not in db["user"]:
         db["user"][str(message.from_user.id)] = {"first_name": message.from_user.first_name, "make_review": "",
                                                  "make_quote": "", "appreciated": [], 'support': False}
         update_db()
@@ -128,6 +133,9 @@ async def send_welcome(message):
             'обратиться к нашим администраторам, а они вам обязательно ответят :)\n'
             'Наша группа тг: t.me/sc72botgroup')
     await bot.reply_to(message, text)
+    if str(message.from_user.id) in db['admin']:
+        kb = admin_menu_btn()
+        await bot.send_message(message.from_user.id, 'Вы являетесь админом! Вам теперь доспутны специальные команды!', reply_markup=kb)
 
 
 # Меню с командами админа
@@ -136,7 +144,7 @@ async def admin_menu(message):
     if str(message.from_user.id) in db["admin"]:
         text = ("/add_teacher - Добавить учителя\n"
                 "/add_admin - Добавить админа\n"
-                "/delete_admin - Удалить админа\n"
+                "/del_admin - Удалить админа\n"
                 "/get_quote - Получить цитату для проверки\n"
                 "/get_review - Получить отзыв для проверки\n"
                 "/answer_support - Ответить на запросы и предложения юзеров\n"
@@ -281,12 +289,13 @@ async def view_teacher(message):
     if len(teacher) > 5:
         kb.add(types.InlineKeyboardButton(text="1", callback_data="pass"),
                types.InlineKeyboardButton(text="▶️", callback_data="5_view"))
-    await bot.send_message(message.chat.id, "Выберете учителя:", reply_markup=kb)
+    await bot.send_message(message.chat.id, "Выберете учителя:" if len(teacher) else "Здесь пока что нет учителей.", reply_markup=kb)
 
 
 # Просмотр информации об учителе (выбор учителя из списка, следующая страница)
 @bot.callback_query_handler(func=lambda callback: "_view" in callback.data)
 async def callback_view(callback):
+    print(callback.data)
     callback.data = int(callback.data.split('_')[0])
     teacher = sorted(db["teacher"].keys())
     id_teacher = db["teacher"][teacher]['id_teacher']
@@ -309,6 +318,7 @@ async def callback_view(callback):
 # Вернуться к списку учителей
 @bot.callback_query_handler(func=lambda callback: "back_to_" in callback.data)
 async def callback_back_to_(callback):
+    print(callback.data)
     await bot.delete_message(callback.message.chat.id, callback.message.message_id)
     callback.chat = callback.message.chat
     await view_teacher(callback)
@@ -317,6 +327,7 @@ async def callback_back_to_(callback):
 # Просмотр информации об учителе (просмотр конкретного учителя)
 @bot.callback_query_handler(func=lambda callback: "open_" in callback.data or "back_" in callback.data)
 async def callback_open(callback):
+    print(callback.data)
     id_teacher = callback.data[5:]
     full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
@@ -329,6 +340,7 @@ async def callback_open(callback):
 # Оценить учителя от 1 до 10 (вывод кнопочек)
 @bot.callback_query_handler(func=lambda callback: "rate_" in callback.data)
 async def callback_rate(callback):
+    print(callback.data)
     id_teacher = callback.data[5:]
     kb = types.InlineKeyboardMarkup(row_width=5)
     kb.add(
@@ -341,6 +353,7 @@ async def callback_rate(callback):
 # Оценить учителя от 1 до 10 (можно только 1 раз), возвращение кнопок от предыдущей функции
 @bot.callback_query_handler(func=lambda callback: "rating_" in callback.data)
 async def callback_rating(callback):
+    print(callback.data)
     rate, id_teacher = callback.data[7:].split("_")
     full_name = db["id_teacher"][id_teacher]
     teacher = db["teacher"][full_name]
@@ -362,6 +375,7 @@ async def callback_rating(callback):
 # Добавление цитаты/отзыва, отмена действия
 @bot.callback_query_handler(func=lambda callback: "OK_" in callback.data or "off_" in callback.data)
 async def callback_confirmation(callback):
+    print(callback.data)
     action, comm, id_teacher = callback.data.split('_')
     full_name = db["id_teacher"][id_teacher]
     db["user"][str(callback.message.chat.id)]["make_" + comm] = ''
@@ -385,6 +399,7 @@ async def callback_confirmation(callback):
 # Оставить отзыв / Добавить цитату
 @bot.callback_query_handler(func=lambda callback: "make_" in callback.data)
 async def callback_make_review_or_quote(callback):
+    print(callback.data)
     comm, id_teacher = callback.data.split("_")[1], callback.data.split("_")[2]
     full_name = db["id_teacher"][id_teacher]
     db["user"][str(callback.message.chat.id)]["make_review" if comm == "review" else "make_quote"] = full_name
@@ -399,6 +414,7 @@ async def callback_make_review_or_quote(callback):
 @bot.callback_query_handler(func=lambda callback: ("review_" in callback.data or "quote_" in callback.data) and
                                                   "del" not in callback.data and "add" not in callback.data)
 async def callback_review_or_quote(callback):
+    print(callback.data)
     comm, num, id_teacher = callback.data.split("_")[0], int(callback.data.split("_")[1]), callback.data.split("_")[2]
     full_name = db["id_teacher"][id_teacher]
     lst = db["teacher"][full_name][comm]
@@ -425,6 +441,7 @@ async def callback_review_or_quote(callback):
 # Сохранение изменений в профиле учителя
 @bot.callback_query_handler(func=lambda callback: "save_edit_" in callback.data)
 async def callback_save_edit(callback):
+    print(callback.data)
     id = str(callback.message.chat.id)
     full_name = db["admin"][id]["edit_teacher"]['full_name']
     id_teacher = db["teacher"][full_name]['id_teacher']
@@ -457,6 +474,7 @@ async def callback_save_edit(callback):
 # Запрос: на что именно изменять данные у учителя
 @bot.callback_query_handler(func=lambda callback: "_editing_" in callback.data)
 async def callback_editing(callback):
+    print(callback.data)
     obj, _, id_teacher = callback.data.split("_")
     full_name = db["id_teacher"][id_teacher]
     text = f"Введите новые данные ({obj}):"
@@ -472,6 +490,7 @@ async def callback_editing(callback):
 # Запрос: какие изменять данные у учителя
 @bot.callback_query_handler(func=lambda callback: "edit_" in callback.data)
 async def callback_edit(callback):
+    print(callback.data)
     id_teacher = callback.data[5:]
     if db['admin'][str(callback.message.chat.id)]['edit_teacher']['full_name']:
         db['admin'][str(callback.message.chat.id)]['edit_teacher']['full_name'] = ''
@@ -491,6 +510,7 @@ async def callback_edit(callback):
 # Добавление цитаты/отзыва, предложенных юзером (только админы)
 @bot.callback_query_handler(func=lambda callback: "add_quote_" in callback.data or "add_review_" in callback.data)
 async def callback_add_q_or_r(callback):
+    print(callback.data)
     _, comm, id_teacher, q_or_r = callback.data.split("_")
     teacher = db["id_teacher"][id_teacher]
     q_or_r = db[comm][teacher].pop(int(q_or_r))
@@ -507,6 +527,7 @@ async def callback_add_q_or_r(callback):
 # Удаление цитаты/отзыва, предложенных юзером (только админы)
 @bot.callback_query_handler(func=lambda callback: "del_quote_" in callback.data or "del_review_" in callback.data)
 async def callback_del_q_or_r(callback):
+    print(callback.data)
     _, comm, id_teacher, q_or_r = callback.data.split("_")
     teacher = db["id_teacher"][id_teacher]
     del db[comm][teacher][int(q_or_r)]
@@ -520,6 +541,7 @@ async def callback_del_q_or_r(callback):
 # Удаление учителя или отмена (обработка с кнопок: удалить/не удалять)
 @bot.callback_query_handler(func=lambda callback: "delete_" in callback.data)
 async def callback_delete(callback):
+    print(callback.data)
     if 'dont' not in callback.data:
         full_name = db["id_teacher"][callback.data[7:]]
         del db["teacher"][full_name]
@@ -541,7 +563,8 @@ async def callback_delete(callback):
 # Удаление учителя или отмена (создание кнопок: удалить/не удалять)
 @bot.callback_query_handler(func=lambda callback: "del_" in callback.data)
 async def callback_del(callback):
-    full_name = db["id_teacher"][int(callback.data[4:])]
+    print(callback.data)
+    full_name = db["id_teacher"][callback.data[4:]]
     text = f'Вы уверены, что хотите безвозвратно удалить учителя {hbold(full_name)} ?'
     kb = types.InlineKeyboardMarkup(row_width=3)
     kb.add(types.InlineKeyboardButton(text="Да", callback_data=f'delete_{callback.data[4:]}'),
@@ -589,7 +612,8 @@ async def text_processing(message):
                                                     'Постараемся вам ответить в ближайшее время.')
     # Обработка сообщений админов
     if id in db["admin"]:
-
+        if message.text == 'Команды админа':
+            await admin_menu(message)
         # Добавление учителя
         if db["admin"][id]["add_teacher"]["start"]:
             shortcut = db["admin"][id]["add_teacher"]
@@ -668,14 +692,15 @@ async def text_processing(message):
                                        f"Пользователь " +
                                        hlink(db['user'][message.text]['first_name'], f"tg://user?id={message.text}") +
                                        " теперь админ.", parse_mode='HTML')
+                kb = admin_menu_btn()
                 await bot.send_message(message.text,
-                                       "Вы теперь админ! Вам доступно меня /admin_menu и ещё много всего!")
+                                       "Вы теперь админ! Вам доступно меню /admin_menu и ещё много всего!", reply_markup=kb)
             else:
                 text = 'Такого пользователя нет в базе данных. Его нельзя сделать админом. Введите ещё раз.'
 
         # Удаление админа
         elif db['admin'][id]["del_admin"]:
-            if message.text in db['admin']:
+            if message.text in db['admin'] and message.text != message.from_user.id:
                 db['admin'][id]["del_admin"] = False
                 del db['admin'][message.text]
 
@@ -683,6 +708,9 @@ async def text_processing(message):
                                        f"Пользователь " +
                                        hlink(db['user'][message.text]['first_name'], f"tg://user?id={message.text}") +
                                        " больше не админ.", parse_mode='HTML')
+                await bot.send_message(message.text,
+                                       "Вы больше не являетесь админом.",
+                                       reply_markup=types.ReplyKeyboardRemove())
             else:
                 text = 'Такого пользователя нет в базе данных. Его нельзя удалить из админов. Введите ещё раз.'
 
